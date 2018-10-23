@@ -144,7 +144,7 @@ func (ini *IniContainer) AddSection(section string) *IniContainer {
 
 //将配置保存到文件中
 func (ini *IniContainer) SaveFile(path string) error {
-	f,err := os.Open(path)
+	f,err := os.Create(path)
 
 	if err != nil {
 		return err
