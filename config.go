@@ -9,8 +9,8 @@ import (
 	"strings"
 	"path/filepath"
 	"os"
-	"github.com/labstack/gommon/log"
 	"io/ioutil"
+	"log"
 )
 
 var (
@@ -267,7 +267,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 				f, err := os.Stat(otherFile)
 				//如果获取目标信息失败则跳过
 				if err != nil {
-					log.Warnf("file or directory does not exist: %s %s\n", err, otherFile)
+					log.Println("file or directory does not exist: ", err, otherFile)
 					continue
 				}
 				//如果是目录，则要扫描目录下的文件并解析
@@ -293,7 +293,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 						return nil
 					})
 					if err != nil {
-						log.Warnf("scan directory error:%s %s\n", err, otherFile)
+						log.Println("scan directory error:", err, otherFile)
 						continue
 					}
 				} else {
@@ -354,7 +354,7 @@ func parseFile(path string, section string) (*IniContainer, error) {
 	b, err := ioutil.ReadFile(path)
 
 	if err != nil {
-		log.Warnf("read file error: %s %s", err, path)
+		log.Println("read file error: ", err, path)
 		return nil, err
 	}
 	return parseData(b, section, filepath.Dir(path))
