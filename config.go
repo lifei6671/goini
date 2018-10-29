@@ -639,7 +639,7 @@ func (c *IniContainer) Set(key, value string) error {
 }
 
 //遍历所有 Section .
-func (c *IniContainer) Do(fn func(section string) bool)  {
+func (c *IniContainer) ForEach(fn func(section string) bool)  {
 	for s := range c.values {
 		if !fn(s) {
 			return
