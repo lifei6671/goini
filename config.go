@@ -11,10 +11,12 @@ import (
 	"os"
 	"io/ioutil"
 	"log"
+	"fmt"
+	"strconv"
 )
 
 var (
-	defaultSection     = "default"   // 默认节点,
+	
 	defaultComment     = []byte{'#'} // 注释标记
 	alternativeComment = []byte{';'} // 注释标记
 	empty              = []byte{}
@@ -25,6 +27,8 @@ var (
 	lineBreak          = "\n"
 )
 
+// 默认节点
+const DefaultSection     = "default"
 
 type entry struct {
 	section string
@@ -36,21 +40,21 @@ type entry struct {
 
 type IniContainer struct {
 	sync.RWMutex
-	values map[string]map[string]*entry
+	values         map[string]map[string]*entry
 	sectionComment map[string]string //节点的注释
-	endComment string //文件结束注释，一般在文件尾部
+	endComment     string            //文件结束注释，一般在文件尾部
 }
 
 //从文件中加载配置信息
 func LoadFromFile(path string) (ini *IniContainer, err error) {
-	ini, err = parseFile(path, defaultSection)
+	ini, err = parseFile(path, DefaultSection)
 	return
 }
 
-func NewConfig() *IniContainer  {
+func NewConfig() *IniContainer {
 	return &IniContainer{
 		RWMutex: sync.RWMutex{},
-		values: make(map[string]map[string]*entry),
+		values:  make(map[string]map[string]*entry),
 	}
 }
 
@@ -59,24 +63,24 @@ func NewConfig() *IniContainer  {
 //例如:
 // ini.AddEntry("","session","true")		 //添加到默认节点
 // ini.AddEntry("session","session","false") //添加到自定义节点
-func (ini *IniContainer) AddEntry(section, key, value string) *IniContainer {
-	ini.RWMutex.Lock()
-	defer ini.RWMutex.Unlock()
+func (c *IniContainer) AddEntry(section, key, value string) *IniContainer {
+	c.RWMutex.Lock()
+	defer c.RWMutex.Unlock()
 	section = strings.TrimSpace(section)
 	key = strings.TrimSpace(key)
 	value = strings.TrimSpace(value)
 
 	if section == "" {
-		section = defaultSection
+		section = DefaultSection
 	}
 
-	if ini.values == nil {
-		ini.values = make(map[string]map[string]*entry)
+	if c.values == nil {
+		c.values = make(map[string]map[string]*entry)
 	}
-	if ini.values[section] == nil {
-		ini.values[section] = make(map[string]*entry)
+	if c.values[section] == nil {
+		c.values[section] = make(map[string]*entry)
 	}
-	k,_ := ParseValueEnv(value)
+	k, _ := ParseValueEnv(value)
 
 	ev := &entry{
 		section: section,
@@ -86,23 +90,23 @@ func (ini *IniContainer) AddEntry(section, key, value string) *IniContainer {
 	if k != "" {
 		ev.env = k
 	}
-	ini.values[section][key] = ev
-	return ini
+	c.values[section][key] = ev
+	return c
 }
 
 //删除指定节点下的key.
 //如果删除成功返回 true，如果节点不存在返回 false.
-func (ini *IniContainer) DeleteKey(section, key string) bool {
-	ini.Lock()
-	defer ini.Unlock()
+func (c *IniContainer) DeleteKey(section, key string) bool {
+	c.Lock()
+	defer c.Unlock()
 	section = strings.TrimSpace(section)
 	key = strings.TrimSpace(key)
 	if section == "" {
-		section = defaultSection
+		section = DefaultSection
 	}
-	if _,ok := ini.values[section]; ok {
-		if _,ok := ini.values[section][key]; ok {
-			delete(ini.values[section],key)
+	if _, ok := c.values[section]; ok {
+		if _, ok := c.values[section][key]; ok {
+			delete(c.values[section], key)
 			return true
 		}
 	}
@@ -111,90 +115,89 @@ func (ini *IniContainer) DeleteKey(section, key string) bool {
 
 //删除指定的节点.
 //如果删除成功返回 true，如果不存在返回false
-func (ini *IniContainer) DeleteSection(section string) bool  {
-	ini.Lock()
-	defer ini.Unlock()
+func (c *IniContainer) DeleteSection(section string) bool {
+	c.Lock()
+	defer c.Unlock()
 	section = strings.TrimSpace(section)
 	if section == "" {
-		section = defaultSection
+		section = DefaultSection
 	}
-	if _,ok := ini.values[section]; ok {
-		delete(ini.values,section)
+	if _, ok := c.values[section]; ok {
+		delete(c.values, section)
 		return true
 	}
 	return false
 }
 
 //添加一个节点.
-func (ini *IniContainer) AddSection(section string) *IniContainer {
-	ini.Lock()
-	defer ini.Unlock()
+func (c *IniContainer) AddSection(section string) *IniContainer {
+	c.Lock()
+	defer c.Unlock()
 	section = strings.TrimSpace(section)
 	if section == "" {
-		section = defaultSection
+		section = DefaultSection
 	}
-	if _,ok := ini.values[section]; !ok {
-		if ini.values == nil {
-			ini.values = make(map[string]map[string]*entry)
+	if _, ok := c.values[section]; !ok {
+		if c.values == nil {
+			c.values = make(map[string]map[string]*entry)
 		}
-		ini.values[section] = make(map[string]*entry)
+		c.values[section] = make(map[string]*entry)
 	}
-	return ini
+	return c
 }
 
 //将配置保存到文件中
-func (ini *IniContainer) SaveFile(path string) error {
-	f,err := os.Create(path)
+func (c *IniContainer) SaveFile(path string) error {
+	f, err := os.Create(path)
 
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_,err = f.WriteString(ini.String())
+	_, err = f.WriteString(c.String())
 
 	return err
 }
 
 //输出字符串
-func (ini *IniContainer) String() string {
+func (c *IniContainer) String() string {
 	body := ""
 
-	if ini == nil || len(ini.values) <= 0 {
+	if c == nil || len(c.values) <= 0 {
 		return body
 	}
-	if section,ok := ini.values[defaultSection]; ok {
+	if section, ok := c.values[DefaultSection]; ok {
 		if section != nil && len(section) > 0 {
 			for _, vv := range section {
 				if vv.comment != "" {
 					body += lineBreak + vv.comment + lineBreak
 				}
-				body += vv.key + "=\"" + vv.value +"\"" + lineBreak
+				body += vv.key + "=\"" + vv.value + "\"" + lineBreak
 			}
 		}
 	}
-	for k, v := range ini.values {
+	for k, v := range c.values {
 		if k == "default" {
 			continue
 		}
 		//如果存在节点注释
-		if c,ok := ini.sectionComment[k]; ok {
-			body +=  lineBreak + c + lineBreak + "[" + k + "]" + lineBreak
-		}else{
+		if c, ok := c.sectionComment[k]; ok {
+			body += lineBreak + c + lineBreak + "[" + k + "]" + lineBreak
+		} else {
 			body += lineBreak + "[" + k + "]" + lineBreak
 		}
-
 
 		if v != nil && len(v) > 0 {
 			for _, vv := range v {
 				if vv.comment != "" {
 					body += lineBreak + vv.comment + lineBreak
 				}
-				body +=  vv.key + "=\"" + vv.value +"\"" + lineBreak
+				body += vv.key + "=\"" + vv.value + "\"" + lineBreak
 			}
 		}
 	}
 
-	body += ini.endComment
+	body += c.endComment
 	return body
 }
 
@@ -204,8 +207,8 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 	}
 
 	cfg := &IniContainer{
-		RWMutex: sync.RWMutex{},
-		values:  make(map[string]map[string]*entry, 0),
+		RWMutex:        sync.RWMutex{},
+		values:         make(map[string]map[string]*entry, 0),
 		sectionComment: make(map[string]string),
 	}
 	cfg.Lock()
@@ -338,7 +341,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 			cfg.values = make(map[string]map[string]*entry)
 		}
 		if cfg.values[section] == nil {
-			cfg.values[section] =  make(map[string]*entry)
+			cfg.values[section] = make(map[string]*entry)
 		}
 		cfg.values[section][key] = entryValue
 	}
@@ -435,7 +438,211 @@ func isValueEnv(value string) bool {
 	return strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}")
 }
 
-func (ini *IniContainer) DefaultBool(key string,def bool) bool  {
+func ParseBool(val interface{}) (value bool, err error) {
+	if val != nil {
+		switch v := val.(type) {
+		case bool:
+			return v, nil
+		case string:
+			switch v {
+			case "1", "t", "T", "true", "TRUE", "True", "YES", "yes", "Yes", "Y", "y", "ON", "on", "On":
+				return true, nil
+			case "0", "f", "F", "false", "FALSE", "False", "NO", "no", "No", "N", "n", "OFF", "off", "Off":
+				return false, nil
+			}
+		case int8, int32, int64:
+			strV := fmt.Sprintf("%d", v)
+			if strV == "1" {
+				return true, nil
+			} else if strV == "0" {
+				return false, nil
+			}
+		case float64:
+			if v == 1.0 {
+				return true, nil
+			} else if v == 0.0 {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("parsing %q: invalid syntax", val)
+	}
+	return false, fmt.Errorf("parsing <nil>: invalid syntax")
+}
 
-	return def
+func (c *IniContainer) getData(key string) string {
+	if len(key) == 0 {
+		return ""
+	}
+	c.RLock()
+	defer c.RUnlock()
+
+	var (
+		section, k string
+		sectionKey = strings.Split(strings.ToLower(key), "::")
+	)
+	if len(sectionKey) >= 2 {
+		section = sectionKey[0]
+		k = sectionKey[1]
+	} else {
+		section = DefaultSection
+		k = sectionKey[0]
+	}
+	if v, ok := c.values[section]; ok {
+		if vv, ok := v[k]; ok {
+			return vv.value
+		}
+	}
+	return ""
+}
+func (c *IniContainer) Bool(key string) (bool, error) {
+	return ParseBool(c.getData(key))
+}
+
+func (c *IniContainer) DefaultBool(key string, def bool) bool {
+	v, err := c.Bool(key)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// Int returns the integer value for a given key.
+func (c *IniContainer) Int(key string) (int, error) {
+	return strconv.Atoi(c.getData(key))
+}
+
+// DefaultInt returns the integer value for a given key.
+// if err != nil return defaultval
+func (c *IniContainer) DefaultInt(key string, defaultval int) int {
+	v, err := c.Int(key)
+	if err != nil {
+		return defaultval
+	}
+	return v
+}
+
+// Int64 returns the int64 value for a given key.
+func (c *IniContainer) Int64(key string) (int64, error) {
+	return strconv.ParseInt(c.getData(key), 10, 64)
+}
+
+// DefaultInt64 returns the int64 value for a given key.
+// if err != nil return defaultval
+func (c *IniContainer) DefaultInt64(key string, defaultval int64) int64 {
+	v, err := c.Int64(key)
+	if err != nil {
+		return defaultval
+	}
+	return v
+}
+
+// Float returns the float value for a given key.
+func (c *IniContainer) Float(key string) (float64, error) {
+	return strconv.ParseFloat(c.getData(key), 64)
+}
+
+// DefaultFloat returns the float64 value for a given key.
+// if err != nil return defaultval
+func (c *IniContainer) DefaultFloat(key string, defaultval float64) float64 {
+	v, err := c.Float(key)
+	if err != nil {
+		return defaultval
+	}
+	return v
+}
+
+// String returns the string value for a given key.
+func (c *IniContainer) GetString(key string) string {
+	return c.getData(key)
+}
+
+// DefaultString returns the string value for a given key.
+// if err != nil return defaultval
+func (c *IniContainer) DefaultString(key string, defaultval string) string {
+	v := c.GetString(key)
+	if v == "" {
+		return defaultval
+	}
+	return v
+}
+
+// Strings returns the []string value for a given key.
+// Return nil if config value does not exist or is empty.
+func (c *IniContainer) GetStrings(key string) []string {
+	v := c.GetString(key)
+	if v == "" {
+		return nil
+	}
+	return strings.Split(v, ";")
+}
+
+// DefaultStrings returns the []string value for a given key.
+// if err != nil return defaultval
+func (c *IniContainer) DefaultStrings(key string, defaultval []string) []string {
+	v := c.GetStrings(key)
+	if v == nil {
+		return defaultval
+	}
+	return v
+}
+
+// GetSection returns map for the given section
+func (c *IniContainer) GetSection(section string) (map[string]string, error) {
+	c.RLock()
+	defer c.RUnlock()
+
+	if v, ok := c.values[section]; ok {
+		values := make(map[string]string)
+
+		for k, vv := range v {
+			values[k] = vv.value
+		}
+		return values, nil
+	}
+	return nil, errors.New("not exist section")
+}
+
+// Set writes a new value for key.
+// if write to one section, the key need be "section::key".
+// if the section is not existed, it panics.
+func (c *IniContainer) Set(key, value string) error {
+	c.Lock()
+	defer c.Unlock()
+	if len(key) == 0 {
+		return errors.New("key is empty")
+	}
+
+	var (
+		section, k string
+		sectionKey = strings.Split(strings.ToLower(key), "::")
+	)
+
+	if len(sectionKey) >= 2 {
+		section = sectionKey[0]
+		k = sectionKey[1]
+	} else {
+		section = DefaultSection
+		k = sectionKey[0]
+	}
+
+	if _, ok := c.values[section]; !ok {
+		c.values[section] = make(map[string]*entry)
+	}
+	v := &entry{
+		value:   value,
+		key:     k,
+		section: section,
+	}
+
+	c.values[section][k] = v
+	return nil
+}
+
+//遍历所有 Section .
+func (c *IniContainer) Do(fn func(section string) bool)  {
+	for s := range c.values {
+		if !fn(s) {
+			return
+		}
+	}
 }
