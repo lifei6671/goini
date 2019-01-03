@@ -46,6 +46,21 @@ func TestLoadFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println(ini)
+	fmt.Println(ini.GetString("httpport"))
 
+}
+
+func TestIniContainer_ForEach(t *testing.T) {
+	path,_ := filepath.Abs("./testdata/data1.conf")
+
+	ini,err := LoadFromFile(path)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ini.ForEach(func(section string, entries entries) bool {
+		t.Log(entries.DefaultString("httpport",""))
+		return true
+	})
 }

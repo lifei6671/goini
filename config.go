@@ -1,34 +1,33 @@
 package goini
 
 import (
-	"sync"
-	"errors"
 	"bufio"
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
-	"strings"
-	"path/filepath"
-	"os"
 	"io/ioutil"
 	"log"
-	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 )
 
 var (
-	
 	defaultComment     = []byte{'#'} // 注释标记
 	alternativeComment = []byte{';'} // 注释标记
-	empty              = []byte{}
 	equal              = []byte{'='} // 赋值标记
 	quote              = []byte{'"'} // 双引号标记
 	sectionStart       = []byte{'['} // 节点开始标记
 	sectionEnd         = []byte{']'} // 节点结束标记
 	lineBreak          = "\n"
+	empty              []byte
 )
 
 // 默认节点
-const DefaultSection     = "default"
+const DefaultSection = "default"
 
 type entry struct {
 	section string
@@ -38,9 +37,71 @@ type entry struct {
 	comment string //key的注释
 }
 
+type entries map[string]*entry
+
+func (e entries) GetString(key string) string  {
+	if v, ok := e[key]; ok {
+		if isValueEnv(v.value) {
+			_,vv := ParseValueEnv(v.value)
+			return vv
+		}
+		return v.value
+	}
+	return ""
+}
+
+func (e entries) DefaultString(key string, val string) string {
+	if v:= e.GetString(key);v != "" {
+		return v
+	}
+	return val
+}
+
+func (e entries) DefaultStrings(key string, sep string, val []string) []string {
+	if v := e.GetString(key);  v != "" {
+		return strings.Split(v, sep)
+	}
+	return val
+}
+func (e entries) DefaultInt(key string, val int) int {
+	if v:= e.GetString(key);v != "" {
+		if vv, err := strconv.Atoi(v); err == nil {
+			return vv
+		}
+	}
+	return val
+}
+
+func (e entries) DefaultInt64(key string, val int64) int64 {
+	if v:= e.GetString(key);v != "" {
+		if vv, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return vv
+		}
+	}
+	return val
+}
+
+func (e entries) DefaultFloat(key string, val float64) float64 {
+	if v:= e.GetString(key);v != "" {
+		if vv, err := strconv.ParseFloat(v, 64); err == nil {
+			return vv
+		}
+	}
+	return val
+}
+
+func (e entries) DefaultBool(key string, val bool) bool {
+	if v:= e.GetString(key);v != "" {
+		if vv, err := ParseBool(v); err == nil {
+			return vv
+		}
+	}
+	return val
+}
+
 type IniContainer struct {
 	sync.RWMutex
-	values         map[string]map[string]*entry
+	values         map[string]entries
 	sectionComment map[string]string //节点的注释
 	endComment     string            //文件结束注释，一般在文件尾部
 }
@@ -54,7 +115,7 @@ func LoadFromFile(path string) (ini *IniContainer, err error) {
 func NewConfig() *IniContainer {
 	return &IniContainer{
 		RWMutex: sync.RWMutex{},
-		values:  make(map[string]map[string]*entry),
+		values:  make(map[string]entries),
 	}
 }
 
@@ -75,7 +136,7 @@ func (c *IniContainer) AddEntry(section, key, value string) *IniContainer {
 	}
 
 	if c.values == nil {
-		c.values = make(map[string]map[string]*entry)
+		c.values = make(map[string]entries)
 	}
 	if c.values[section] == nil {
 		c.values[section] = make(map[string]*entry)
@@ -139,7 +200,7 @@ func (c *IniContainer) AddSection(section string) *IniContainer {
 	}
 	if _, ok := c.values[section]; !ok {
 		if c.values == nil {
-			c.values = make(map[string]map[string]*entry)
+			c.values = make(map[string]entries)
 		}
 		c.values[section] = make(map[string]*entry)
 	}
@@ -208,7 +269,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 
 	cfg := &IniContainer{
 		RWMutex:        sync.RWMutex{},
-		values:         make(map[string]map[string]*entry, 0),
+		values:         make(map[string]entries),
 		sectionComment: make(map[string]string),
 	}
 	cfg.Lock()
@@ -219,7 +280,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 	head, err := buf.Peek(3)
 	if err == nil && head[0] == 239 && head[1] == 187 && head[2] == 191 {
 		for i := 1; i <= 3; i++ {
-			buf.ReadByte()
+			_, _ = buf.ReadByte()
 		}
 	}
 	var comment bytes.Buffer
@@ -270,7 +331,6 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 				f, err := os.Stat(otherFile)
 				//如果获取目标信息失败则跳过
 				if err != nil {
-					log.Println("file or directory does not exist: ", err, otherFile)
 					continue
 				}
 				//如果是目录，则要扫描目录下的文件并解析
@@ -296,7 +356,6 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 						return nil
 					})
 					if err != nil {
-						log.Println("scan directory error:", err, otherFile)
 						continue
 					}
 				} else {
@@ -338,7 +397,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 			entryValue.env = k
 		}
 		if cfg.values == nil {
-			cfg.values = make(map[string]map[string]*entry)
+			cfg.values = make(map[string]entries)
 		}
 		if cfg.values[section] == nil {
 			cfg.values[section] = make(map[string]*entry)
@@ -376,7 +435,7 @@ func Merge(config1 *IniContainer, config2 *IniContainer) *IniContainer {
 	}
 	cfg := &IniContainer{
 		RWMutex: sync.RWMutex{},
-		values:  make(map[string]map[string]*entry, 0),
+		values:  make(map[string]entries),
 	}
 	cfg.Lock()
 	defer cfg.Unlock()
@@ -489,6 +548,10 @@ func (c *IniContainer) getData(key string) string {
 	}
 	if v, ok := c.values[section]; ok {
 		if vv, ok := v[k]; ok {
+			if isValueEnv(vv.value) {
+				_,vvv := ParseValueEnv(vv.value)
+				return vvv
+			}
 			return vv.value
 		}
 	}
@@ -512,11 +575,11 @@ func (c *IniContainer) Int(key string) (int, error) {
 }
 
 // DefaultInt returns the integer value for a given key.
-// if err != nil return defaultval
-func (c *IniContainer) DefaultInt(key string, defaultval int) int {
+// if err != nil return defaultVal
+func (c *IniContainer) DefaultInt(key string, defaultVal int) int {
 	v, err := c.Int(key)
 	if err != nil {
-		return defaultval
+		return defaultVal
 	}
 	return v
 }
@@ -527,11 +590,11 @@ func (c *IniContainer) Int64(key string) (int64, error) {
 }
 
 // DefaultInt64 returns the int64 value for a given key.
-// if err != nil return defaultval
-func (c *IniContainer) DefaultInt64(key string, defaultval int64) int64 {
+// if err != nil return defaultVal
+func (c *IniContainer) DefaultInt64(key string, defaultVal int64) int64 {
 	v, err := c.Int64(key)
 	if err != nil {
-		return defaultval
+		return defaultVal
 	}
 	return v
 }
@@ -542,11 +605,11 @@ func (c *IniContainer) Float(key string) (float64, error) {
 }
 
 // DefaultFloat returns the float64 value for a given key.
-// if err != nil return defaultval
-func (c *IniContainer) DefaultFloat(key string, defaultval float64) float64 {
+// if err != nil return defaultVal
+func (c *IniContainer) DefaultFloat(key string, defaultVal float64) float64 {
 	v, err := c.Float(key)
 	if err != nil {
-		return defaultval
+		return defaultVal
 	}
 	return v
 }
@@ -557,31 +620,31 @@ func (c *IniContainer) GetString(key string) string {
 }
 
 // DefaultString returns the string value for a given key.
-// if err != nil return defaultval
-func (c *IniContainer) DefaultString(key string, defaultval string) string {
+// if err != nil return defaultVal
+func (c *IniContainer) DefaultString(key string, defaultVal string) string {
 	v := c.GetString(key)
 	if v == "" {
-		return defaultval
+		return defaultVal
 	}
 	return v
 }
 
 // Strings returns the []string value for a given key.
 // Return nil if config value does not exist or is empty.
-func (c *IniContainer) GetStrings(key string) []string {
+func (c *IniContainer) GetStrings(key string, sep string) []string {
 	v := c.GetString(key)
 	if v == "" {
 		return nil
 	}
-	return strings.Split(v, ";")
+	return strings.Split(v, sep)
 }
 
 // DefaultStrings returns the []string value for a given key.
-// if err != nil return defaultval
-func (c *IniContainer) DefaultStrings(key string, defaultval []string) []string {
-	v := c.GetStrings(key)
+// if err != nil return defaultVal
+func (c *IniContainer) DefaultStrings(key string, defaultVal []string) []string {
+	v := c.GetStrings(key, ";")
 	if v == nil {
-		return defaultval
+		return defaultVal
 	}
 	return v
 }
@@ -639,9 +702,9 @@ func (c *IniContainer) Set(key, value string) error {
 }
 
 //遍历所有 Section .
-func (c *IniContainer) ForEach(fn func(section string) bool)  {
-	for s := range c.values {
-		if !fn(s) {
+func (c *IniContainer) ForEach(fn func(section string, entries entries) bool) {
+	for s, entries := range c.values {
+		if !fn(s, entries) {
 			return
 		}
 	}
