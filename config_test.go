@@ -59,7 +59,7 @@ func TestIniContainer_ForEach(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ini.ForEach(func(section string, entries entries) bool {
+	ini.ForEach(func(section string, entries Entries) bool {
 		t.Log(entries.DefaultString("httpport",""))
 		return true
 	})

@@ -37,9 +37,9 @@ type entry struct {
 	comment string //key的注释
 }
 
-type entries map[string]*entry
+type Entries map[string]*entry
 
-func (e entries) GetString(key string) string  {
+func (e Entries) GetString(key string) string  {
 	if v, ok := e[key]; ok {
 		if isValueEnv(v.value) {
 			_,vv := ParseValueEnv(v.value)
@@ -50,20 +50,20 @@ func (e entries) GetString(key string) string  {
 	return ""
 }
 
-func (e entries) DefaultString(key string, val string) string {
+func (e Entries) DefaultString(key string, val string) string {
 	if v:= e.GetString(key);v != "" {
 		return v
 	}
 	return val
 }
 
-func (e entries) DefaultStrings(key string, sep string, val []string) []string {
+func (e Entries) DefaultStrings(key string, sep string, val []string) []string {
 	if v := e.GetString(key);  v != "" {
 		return strings.Split(v, sep)
 	}
 	return val
 }
-func (e entries) DefaultInt(key string, val int) int {
+func (e Entries) DefaultInt(key string, val int) int {
 	if v:= e.GetString(key);v != "" {
 		if vv, err := strconv.Atoi(v); err == nil {
 			return vv
@@ -72,7 +72,7 @@ func (e entries) DefaultInt(key string, val int) int {
 	return val
 }
 
-func (e entries) DefaultInt64(key string, val int64) int64 {
+func (e Entries) DefaultInt64(key string, val int64) int64 {
 	if v:= e.GetString(key);v != "" {
 		if vv, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return vv
@@ -81,7 +81,7 @@ func (e entries) DefaultInt64(key string, val int64) int64 {
 	return val
 }
 
-func (e entries) DefaultFloat(key string, val float64) float64 {
+func (e Entries) DefaultFloat(key string, val float64) float64 {
 	if v:= e.GetString(key);v != "" {
 		if vv, err := strconv.ParseFloat(v, 64); err == nil {
 			return vv
@@ -90,7 +90,7 @@ func (e entries) DefaultFloat(key string, val float64) float64 {
 	return val
 }
 
-func (e entries) DefaultBool(key string, val bool) bool {
+func (e Entries) DefaultBool(key string, val bool) bool {
 	if v:= e.GetString(key);v != "" {
 		if vv, err := ParseBool(v); err == nil {
 			return vv
@@ -101,7 +101,7 @@ func (e entries) DefaultBool(key string, val bool) bool {
 
 type IniContainer struct {
 	sync.RWMutex
-	values         map[string]entries
+	values         map[string]Entries
 	sectionComment map[string]string //节点的注释
 	endComment     string            //文件结束注释，一般在文件尾部
 }
@@ -115,7 +115,7 @@ func LoadFromFile(path string) (ini *IniContainer, err error) {
 func NewConfig() *IniContainer {
 	return &IniContainer{
 		RWMutex: sync.RWMutex{},
-		values:  make(map[string]entries),
+		values:  make(map[string]Entries),
 	}
 }
 
@@ -136,7 +136,7 @@ func (c *IniContainer) AddEntry(section, key, value string) *IniContainer {
 	}
 
 	if c.values == nil {
-		c.values = make(map[string]entries)
+		c.values = make(map[string]Entries)
 	}
 	if c.values[section] == nil {
 		c.values[section] = make(map[string]*entry)
@@ -200,7 +200,7 @@ func (c *IniContainer) AddSection(section string) *IniContainer {
 	}
 	if _, ok := c.values[section]; !ok {
 		if c.values == nil {
-			c.values = make(map[string]entries)
+			c.values = make(map[string]Entries)
 		}
 		c.values[section] = make(map[string]*entry)
 	}
@@ -269,7 +269,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 
 	cfg := &IniContainer{
 		RWMutex:        sync.RWMutex{},
-		values:         make(map[string]entries),
+		values:         make(map[string]Entries),
 		sectionComment: make(map[string]string),
 	}
 	cfg.Lock()
@@ -397,7 +397,7 @@ func parseData(data []byte, section string, dir string) (*IniContainer, error) {
 			entryValue.env = k
 		}
 		if cfg.values == nil {
-			cfg.values = make(map[string]entries)
+			cfg.values = make(map[string]Entries)
 		}
 		if cfg.values[section] == nil {
 			cfg.values[section] = make(map[string]*entry)
@@ -435,7 +435,7 @@ func Merge(config1 *IniContainer, config2 *IniContainer) *IniContainer {
 	}
 	cfg := &IniContainer{
 		RWMutex: sync.RWMutex{},
-		values:  make(map[string]entries),
+		values:  make(map[string]Entries),
 	}
 	cfg.Lock()
 	defer cfg.Unlock()
@@ -702,7 +702,7 @@ func (c *IniContainer) Set(key, value string) error {
 }
 
 //遍历所有 Section .
-func (c *IniContainer) ForEach(fn func(section string, entries entries) bool) {
+func (c *IniContainer) ForEach(fn func(section string, entries Entries) bool) {
 	for s, entries := range c.values {
 		if !fn(s, entries) {
 			return
